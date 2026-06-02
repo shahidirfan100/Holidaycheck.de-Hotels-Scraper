@@ -1,0 +1,50 @@
+{
+  "title": "HolidayCheck Hotels Scraper",
+  "description": "Extract hotel listings from HolidayCheck destination hotel URLs. The actor supports direct hotel listing URLs as well as destination pages that link to hotel listings.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "urls": {
+      "title": "HolidayCheck URLs",
+      "type": "array",
+      "description": "One or more HolidayCheck listing or destination URLs.",
+      "editor": "requestListSources",
+      "prefill": [
+        {
+          "url": "https://www.holidaycheck.de/dh/hotels-afrika/7de062f4-676c-3e2b-ad4a-12fd69afbeb6?departuredate=2026-06-03&duration=7&returndate=2026-08-01&rooms=a-a&travelkind=package"
+        }
+      ]
+    },
+    "results_wanted": {
+      "title": "Maximum results",
+      "type": "integer",
+      "description": "Maximum number of hotels to return across all URLs.",
+      "editor": "number",
+      "minimum": 1,
+      "default": 20,
+      "prefill": 20
+    },
+    "max_pages": {
+      "title": "Maximum pages per URL",
+      "type": "integer",
+      "description": "Safety cap for HolidayCheck pagination. Each page contains up to 12 hotels.",
+      "editor": "number",
+      "minimum": 1,
+      "default": 3,
+      "prefill": 3
+    },
+    "proxyConfiguration": {
+      "title": "Proxy configuration",
+      "type": "object",
+      "description": "Optional proxy configuration for higher reliability.",
+      "editor": "proxy",
+      "default": {
+        "useApifyProxy": false
+      }
+    }
+  },
+  "required": [
+    "urls"
+  ],
+  "additionalProperties": false
+}
