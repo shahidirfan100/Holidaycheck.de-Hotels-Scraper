@@ -10,8 +10,10 @@ import { gotScraping } from 'got-scraping';
 const DEFAULT_RESULTS_WANTED = 20;
 const DEFAULT_MAX_PAGES = 3;
 const PAGE_SIZE = 12;
+const DEFAULT_ADVANCE_DAYS = 30;
 const HOLIDAYCHECK_ORIGIN = 'https://www.holidaycheck.de';
 const HOLIDAYCHECK_HOST = 'www.holidaycheck.de';
+const HOLIDAYCHECK_HOSTS = new Set([HOLIDAYCHECK_HOST, 'holidaycheck.de']);
 const HOTELS_WITH_OFFER_ENDPOINT = `${HOLIDAYCHECK_ORIGIN}/api/hwo/hotelsWithOffer`;
 const LISTING_SELECT = [
     'id',
@@ -37,6 +39,15 @@ const DEFAULT_HEADERS = {
 };
 
 const ALLOWED_INPUT_ALIASES = ['urls', 'startUrls', 'startUrl', 'url'];
+const PRESERVED_SEARCH_PARAMS = [
+    'duration',
+    'rooms',
+    'travelkind',
+    'departuredate',
+    'departureDate',
+    'returndate',
+    'returnDate',
+];
 
 const wait = (ms) => new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -66,8 +77,8 @@ function normalizeInputUrls(input) {
         for (const candidate of toArray(input[key])) {
             const rawValue = typeof candidate === 'string' ? candidate : candidate?.url;
             if (typeof rawValue !== 'string') continue;
-            const trimmed = rawValue.trim();
-            if (trimmed) urls.push(trimmed);
+            const normalized = normalizeHolidayCheckUrl(rawValue);
+            if (normalized) urls.push(normalized);
         }
     }
 
@@ -82,10 +93,72 @@ function toAbsoluteUrl(value, baseUrl = HOLIDAYCHECK_ORIGIN) {
     }
 }
 
+function normalizeHolidayCheckUrl(value, baseUrl = HOLIDAYCHECK_ORIGIN) {
+    if (typeof value !== 'string') return null;
+
+    const compacted = value
+        .trim()
+        .replace(/^<|>$/g, '')
+        .replace(/\s+/g, '')
+        .replace(/^http:\/\//i, 'https://');
+    if (!compacted) return null;
+
+    const withScheme = compacted.startsWith('//')
+        ? `https:${compacted}`
+        : compacted;
+    const candidate = /^[a-z][a-z\d+.-]*:/i.test(withScheme) || withScheme.startsWith('/')
+        ? withScheme
+        : `https://${withScheme}`;
+
+    let parsed;
+    try {
+        parsed = new URL(candidate, baseUrl);
+    } catch {
+        return null;
+    }
+
+    if (!HOLIDAYCHECK_HOSTS.has(parsed.hostname.toLowerCase())) {
+        return null;
+    }
+
+    parsed.protocol = 'https:';
+    parsed.hostname = HOLIDAYCHECK_HOST;
+    parsed.hash = '';
+    parsed.pathname = parsed.pathname.replace(/\/{2,}/g, '/');
+
+    for (const [from, to] of [
+        ['departureDate', 'departuredate'],
+        ['returnDate', 'returndate'],
+    ]) {
+        if (parsed.searchParams.has(from) && !parsed.searchParams.has(to)) {
+            parsed.searchParams.set(to, parsed.searchParams.get(from));
+        }
+        parsed.searchParams.delete(from);
+    }
+
+    return parsed.href;
+}
+
+function mergeSearchParams(targetUrl, sourceUrl) {
+    const target = normalizeHolidayCheckUrl(targetUrl);
+    const source = normalizeHolidayCheckUrl(sourceUrl);
+    if (!target || !source) return target;
+
+    const targetParsed = new URL(target);
+    const sourceParsed = new URL(source);
+    for (const key of PRESERVED_SEARCH_PARAMS) {
+        if (!targetParsed.searchParams.has(key) && sourceParsed.searchParams.has(key)) {
+            targetParsed.searchParams.set(key, sourceParsed.searchParams.get(key));
+        }
+    }
+
+    return normalizeHolidayCheckUrl(targetParsed.href);
+}
+
 function isListingUrl(urlString) {
     try {
         const { pathname, hostname } = new URL(urlString);
-        return hostname === HOLIDAYCHECK_HOST && pathname.startsWith('/dh/');
+        return HOLIDAYCHECK_HOSTS.has(hostname.toLowerCase()) && pathname.startsWith('/dh/');
     } catch {
         return false;
     }
@@ -192,17 +265,22 @@ async function readApiDiscoveryNotes() {
 }
 
 async function resolveListingUrl(startUrl, proxyConfiguration) {
-    if (isListingUrl(startUrl)) {
-        return { listingUrl: startUrl, landingUrl: startUrl, resolution: 'listing-url' };
+    const normalizedStartUrl = normalizeHolidayCheckUrl(startUrl);
+    if (!normalizedStartUrl) {
+        throw new Error(`Invalid HolidayCheck URL: ${startUrl}`);
     }
 
-    const html = await fetchText(startUrl, proxyConfiguration);
-    const listingUrl = extractShowMoreHref(html);
+    if (isListingUrl(normalizedStartUrl)) {
+        return { listingUrl: normalizedStartUrl, landingUrl: normalizedStartUrl, resolution: 'listing-url' };
+    }
+
+    const html = await fetchText(normalizedStartUrl, proxyConfiguration);
+    const listingUrl = mergeSearchParams(extractShowMoreHref(html), normalizedStartUrl);
     if (!listingUrl) {
-        throw new Error(`Could not resolve a HolidayCheck hotel listing URL from ${startUrl}`);
+        throw new Error(`Could not resolve a HolidayCheck hotel listing URL from ${normalizedStartUrl}`);
     }
 
-    return { listingUrl, landingUrl: startUrl, resolution: 'landing-url' };
+    return { listingUrl, landingUrl: normalizedStartUrl, resolution: 'landing-url' };
 }
 
 function getStoresFromHtml(html) {
@@ -227,6 +305,86 @@ function parseIsoDateParts(value) {
         year: date.getUTCFullYear(),
         monthOfYear: date.getUTCMonth() + 1,
         dayOfMonth: date.getUTCDate(),
+    };
+}
+
+function formatDateOnly(date) {
+    return date.toISOString().slice(0, 10);
+}
+
+function addDays(date, days) {
+    const nextDate = new Date(date);
+    nextDate.setUTCDate(nextDate.getUTCDate() + days);
+    return nextDate;
+}
+
+function normalizeDateRange(settings, sourceUrl) {
+    const normalized = { ...settings };
+    const url = toAbsoluteUrl(sourceUrl);
+    const params = url ? new URL(url).searchParams : new URLSearchParams();
+    const today = new Date();
+    const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const fallbackDeparture = addDays(todayUtc, DEFAULT_ADVANCE_DAYS);
+    const queryDuration = params.get('duration');
+    const queryDepartureDate = params.get('departuredate') || params.get('departureDate');
+    const queryReturnDate = params.get('returndate') || params.get('returnDate');
+    const duration = Number(queryDuration ?? normalized.duration ?? 7) || 7;
+
+    normalized.duration = String(duration);
+    normalized.departureDate = queryDepartureDate || normalized.departureDate;
+    normalized.returnDate = queryReturnDate || normalized.returnDate;
+
+    const originalDepartureDate = normalized.departureDate;
+    const originalReturnDate = normalized.returnDate;
+    let repaired = false;
+    let departureDate = new Date(normalized.departureDate || fallbackDeparture);
+    if (Number.isNaN(departureDate.getTime()) || departureDate < todayUtc) {
+        departureDate = fallbackDeparture;
+        repaired = true;
+    }
+
+    let returnDate = new Date(normalized.returnDate || addDays(departureDate, duration));
+    if (Number.isNaN(returnDate.getTime()) || returnDate <= departureDate) {
+        returnDate = addDays(departureDate, duration);
+        repaired = true;
+    }
+
+    normalized.departureDate = formatDateOnly(departureDate);
+    normalized.returnDate = formatDateOnly(returnDate);
+
+    if (repaired) {
+        log.warning('Auto-healed HolidayCheck search dates', {
+            source_url: sourceUrl,
+            original_departure_date: originalDepartureDate,
+            original_return_date: originalReturnDate,
+            normalized_departure_date: normalized.departureDate,
+            normalized_return_date: normalized.returnDate,
+            duration: normalized.duration,
+        });
+    }
+
+    return normalized;
+}
+
+function mergeSearchSettings(listingUrl, searchParamsStore, destinationStore) {
+    const defaultSearchSettings = searchParamsStore.defaultSearchSettings || {};
+    const userSearchSettings = searchParamsStore.userSearchSettings || {};
+    const travelkind = userSearchSettings.travelkind
+        || defaultSearchSettings.travelkind
+        || destinationStore.defaultTravelkind
+        || 'package';
+    const defaultTravelkindSettings = defaultSearchSettings[travelkind] || {};
+    const userTravelkindSettings = userSearchSettings[travelkind] || {};
+    const mergedTravelkindSettings = normalizeDateRange({
+        ...defaultTravelkindSettings,
+        ...userTravelkindSettings,
+    }, listingUrl);
+
+    return {
+        ...defaultSearchSettings,
+        ...userSearchSettings,
+        travelkind,
+        [travelkind]: mergedTravelkindSettings,
     };
 }
 
@@ -332,9 +490,9 @@ function buildMpgSearchSpec(searchSettings) {
 function buildContextFromStores(listingUrl, landingUrl, stores) {
     const searchParamsStore = stores.SearchParamsStore;
     const destinationStore = stores.DestinationStore;
-    const searchSettings = searchParamsStore.userSearchSettings || searchParamsStore.defaultSearchSettings;
+    const searchSettings = mergeSearchSettings(listingUrl, searchParamsStore, destinationStore);
     const travelkind = searchSettings?.travelkind || destinationStore.defaultTravelkind || 'package';
-    const activeSettings = searchSettings?.[travelkind] || searchParamsStore.defaultSearchSettings?.[travelkind];
+    const activeSettings = searchSettings?.[travelkind];
 
     return {
         landingUrl,
@@ -778,35 +936,41 @@ export async function scrapeUrls(input, options = {}) {
     return allItems.slice(0, resultsWanted);
 }
 
-async function run() {
-    await Actor.init();
+async function loadRuntimeInput() {
+    const actorInput = (await Actor.getInput()) || {};
+    if (normalizeInputUrls(actorInput).length || Actor.isAtHome()) {
+        return actorInput;
+    }
 
     try {
-        const input = (await Actor.getInput()) || {};
-        const proxyConfiguration = input.proxyConfiguration
-            ? await Actor.createProxyConfiguration(input.proxyConfiguration)
-            : undefined;
-
-        const items = await scrapeUrls(input, {
-            proxyConfiguration,
-            onBatch: async (batch) => {
-                await Actor.pushData(batch);
-            },
-        });
-
-        if (!items.length) {
-            throw new Error('No HolidayCheck hotels were extracted. Check the input URL or search dates.');
-        }
-
-        log.info(`Saved ${items.length} HolidayCheck hotels`);
-    } finally {
-        await Actor.exit();
+        const localInput = JSON.parse(await readFile(new URL('../INPUT.json', import.meta.url), 'utf8'));
+        log.info('Using local INPUT.json fallback for development run');
+        return localInput;
+    } catch {
+        return actorInput;
     }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-    run().catch((error) => {
-        log.exception(error, 'Actor failed');
-        process.exitCode = 1;
+async function run() {
+    const input = await loadRuntimeInput();
+    const proxyConfiguration = input.proxyConfiguration
+        ? await Actor.createProxyConfiguration(input.proxyConfiguration)
+        : undefined;
+
+    const items = await scrapeUrls(input, {
+        proxyConfiguration,
+        onBatch: async (batch) => {
+            await Actor.pushData(batch);
+        },
     });
+
+    if (!items.length) {
+        throw new Error('No HolidayCheck hotels were extracted. Check the input URL or search dates.');
+    }
+
+    log.info(`Saved ${items.length} HolidayCheck hotels`);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+    await Actor.main(run);
 }

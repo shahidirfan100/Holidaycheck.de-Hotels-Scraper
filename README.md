@@ -4,11 +4,11 @@ Extract HolidayCheck hotel listings from destination hotel pages and destination
 
 ## Features
 
-- **Destination hotel extraction** — Collect hotel listings from HolidayCheck destination hotel pages
-- **Multiple URL patterns** — Accept direct hotel listing URLs and destination pages that lead to hotel listings
-- **Package and hotel-only support** — Preserve the search mode already encoded in the source URL
-- **Rich hotel records** — Return pricing context, destination hierarchy, ratings, awards, compact fingerprint summaries, and offer details
-- **Clean datasets** — Skip empty and null fields so exported data stays compact and usable
+- **Destination hotel extraction** - Collect hotel listings from HolidayCheck destination hotel pages
+- **Multiple URL patterns** - Accept direct hotel listing URLs and destination pages that lead to hotel listings
+- **Package and hotel-only support** - Preserve the search mode already encoded in the source URL
+- **Rich hotel records** - Return pricing context, destination hierarchy, ratings, awards, compact fingerprint summaries, and offer details
+- **Clean datasets** - Skip empty and null fields so exported data stays compact and usable
 
 ## Use Cases
 
@@ -30,7 +30,7 @@ Join HolidayCheck hotel IDs, destination hierarchy, and pricing context with you
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `urls` | Array | Yes | — | One or more HolidayCheck URLs. Direct `/dh/` hotel listing URLs are preferred, but destination pages are also supported. |
+| `urls` | Array | Yes | - | One or more HolidayCheck URLs. Direct `/dh/` hotel listing URLs are preferred, but destination pages are also supported. |
 | `results_wanted` | Integer | No | `20` | Maximum number of hotels to collect across all provided URLs. |
 | `max_pages` | Integer | No | `3` | Safety cap for how many result pages to request per URL. |
 | `proxyConfiguration` | Object | No | `{"useApifyProxy": false}` | Optional proxy configuration for more reliable access. |
@@ -80,7 +80,7 @@ Use a HolidayCheck destination hotel listing page directly:
 {
   "urls": [
     {
-      "url": "https://www.holidaycheck.de/dh/hotels-afrika/7de062f4-676c-3e2b-ad4a-12fd69afbeb6?departuredate=2026-06-03&duration=7&returndate=2026-08-01&rooms=a-a&travelkind=package"
+      "url": "https://www.holidaycheck.de/dh/hotels-afrika/7de062f4-676c-3e2b-ad4a-12fd69afbeb6?duration=7&rooms=a-a&travelkind=package"
     }
   ],
   "results_wanted": 20,
@@ -96,7 +96,7 @@ Keep the `hotelonly` search mode from the input URL:
 {
   "urls": [
     {
-      "url": "https://www.holidaycheck.de/dh/hotels-afrika/7de062f4-676c-3e2b-ad4a-12fd69afbeb6?departuredate=2026-06-10&returndate=2026-06-17&rooms=a-a&travelkind=hotelonly"
+      "url": "https://www.holidaycheck.de/dh/hotels-afrika/7de062f4-676c-3e2b-ad4a-12fd69afbeb6?duration=7&rooms=a-a&travelkind=hotelonly"
     }
   ],
   "results_wanted": 12,
@@ -206,18 +206,18 @@ Start from a destination page and let the actor resolve the matching hotel listi
 
 Connect your data with:
 
-- **Google Sheets** — Export hotel lists for review and comparison
-- **Airtable** — Build searchable hotel research databases
-- **Make** — Trigger downstream travel workflows
-- **Zapier** — Send hotel data into business tools
-- **Webhooks** — Push data to custom APIs or storage pipelines
+- **Google Sheets** - Export hotel lists for review and comparison
+- **Airtable** - Build searchable hotel research databases
+- **Make** - Trigger downstream travel workflows
+- **Zapier** - Send hotel data into business tools
+- **Webhooks** - Push data to custom APIs or storage pipelines
 
 ### Export Formats
 
-- **JSON** — For APIs and engineering workflows
-- **CSV** — For spreadsheet and reporting workflows
-- **Excel** — For business sharing and analysis
-- **XML** — For structured system integrations
+- **JSON** - For APIs and engineering workflows
+- **CSV** - For spreadsheet and reporting workflows
+- **Excel** - For business sharing and analysis
+- **XML** - For structured system integrations
 
 ---
 
