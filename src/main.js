@@ -354,12 +354,10 @@ function normalizeDateRange(settings, sourceUrl) {
 
     if (repaired) {
         log.warning('Auto-healed HolidayCheck search dates', {
-            source_url: sourceUrl,
             original_departure_date: originalDepartureDate,
             original_return_date: originalReturnDate,
             normalized_departure_date: normalized.departureDate,
             normalized_return_date: normalized.returnDate,
-            duration: normalized.duration,
         });
     }
 
@@ -871,7 +869,7 @@ export async function scrapeUrls(input, options = {}) {
     for (const sourceUrl of inputUrls) {
         if (allItems.length >= resultsWanted) break;
 
-        log.info('Preparing HolidayCheck source', {
+        log.debug('Preparing HolidayCheck source', {
             source_kind: getUrlKind(sourceUrl),
         });
         const { listingUrl, landingUrl, resolution } = await resolveListingUrl(sourceUrl, proxyConfiguration);
@@ -879,12 +877,11 @@ export async function scrapeUrls(input, options = {}) {
         const { stores } = getStoresFromHtml(listingHtml);
         let context = buildContextFromStores(listingUrl, landingUrl, stores);
 
-        log.info('Using HolidayCheck listing context', {
+        log.info('Scraping HolidayCheck destination', {
             source_kind: getUrlKind(sourceUrl),
-            resolution,
             travelkind: context.travelkind,
-            destinationId: context.destinationId,
             destinationName: context.destinationName,
+            resolution,
         });
 
         for (let page = 0; page < maxPages; page++) {
@@ -919,11 +916,10 @@ export async function scrapeUrls(input, options = {}) {
                 });
             }
 
-            log.info('Processed HolidayCheck result page', {
+            log.debug('Processed HolidayCheck result page', {
                 page: page + 1,
                 saved_in_page: batch.length,
                 total_saved: allItems.length,
-                destinationId: context.destinationId,
                 travelkind: context.travelkind,
             });
 
@@ -968,7 +964,9 @@ async function run() {
         throw new Error('No HolidayCheck hotels were extracted. Check the input URL or search dates.');
     }
 
-    log.info(`Saved ${items.length} HolidayCheck hotels`);
+    log.info('Finished HolidayCheck extraction', {
+        total_saved: items.length,
+    });
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
